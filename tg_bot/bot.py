@@ -9,8 +9,7 @@ from aiogram.filters import Command
 import logging
 
 # Настройки
-BOT_TOKEN = "7946330860:AAE0bXpkdVOzjFqN4bIjLGrPFbef2z0nocQ"
-API_TOKEN = 'YOUR_BOT_TOKEN'
+BOT_TOKEN = "YOUR_BOT_TOKEN"
 MODEL_API_URL = 'YOUR_DATASPHERE_API_ENDPOINT'
 
 # Инициализация
@@ -105,7 +104,7 @@ async def handle_message(message: Message):
             print(len(user_data[user_id]["texts"]))
 
 
-# Очистка данных пользователя todo: Посмотреть и переделать команду restart
+# Очистка данных пользователя
 @dp.message(Command("restart"))
 async def clear_handler(message: Message):
     user_id = message.from_user.id
@@ -117,7 +116,7 @@ async def clear_handler(message: Message):
 async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
     try:
         file = await bot.get_file(file_id)
-        file_url = f"https://api.telegram.org/file/bot{API_TOKEN}/{file.file_path}"
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
 
         async with aiohttp.ClientSession() as session:
             async with session.get(file_url) as response:
