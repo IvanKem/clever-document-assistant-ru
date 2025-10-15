@@ -1,18 +1,20 @@
 import asyncio
-import aiohttp
 import base64
+import logging
+import os
+import traceback
+from typing import Dict, Any
+import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import Message, BufferedInputFile, ErrorEvent
 from aiogram.enums import ContentType, ParseMode
 from aiogram.filters import Command
+from aiogram.types import Message, ErrorEvent
 from decouple import config
-import logging
-import traceback
 
 # Настройки
-BOT_TOKEN = config('BOT_TOKEN')
-MODEL_API_URL = config('MODEL_API_URL')
+BOT_TOKEN = config("BOT_TOKEN")
+MODEL_API_URL = config("LOCAL_MODEL_API_URL")
 
 # Инициализация
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -38,17 +40,21 @@ async def start_handler(message: Message):
 🤖 <b>Добро пожаловать в бот для обработки документов!</b>
 
 Я могу:
-• 📷 Обрабатывать изображения через OCR
+• 📷 Обрабатывать изображения и видео через OCR
 • 📄 Извлекать текст из PDF файлов
 • 🧠 Анализировать контент с помощью AI
 
 <b>Как работать:</b>
 1. Отправьте мне изображение или PDF файл
 2. Я извлеку из него текст
-3. Задайте вопрос о содержимом документа
-4. Получите интеллектуальный ответ!
+3. Задайте вопрос о содержимом документов
+4. Получите ответ!
 
-Просто отправьте файл чтобы начать!
+<b>Доступные команды:</b>
+1. /start - начало работы с ботом
+2. /help - справка по работе с ботом
+3. /restart - Сброс всех данных
+4. /ask - Отправка запроса к модели
         """
         await message.answer(welcome_text)
         logger.info(f"✅ /start успешно обработан для {message.from_user.id}")
@@ -57,6 +63,7 @@ async def start_handler(message: Message):
         await message.answer("Произошла ошибка при обработке команды /start")
 
 
+# Справочная команда /help
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     try:
@@ -71,7 +78,6 @@ async def cmd_help(message: Message):
 
 <b>Поддерживаемые форматы:</b>
 • Изображения: JPG, PNG, JPEG, BMP, TIFF
-• Видео: MP4, AVI, MOV, WEBM
 • Документы: PDF
         """
         await message.answer(help_text)
@@ -128,7 +134,7 @@ async def ask_handler(message: Message):
             return
 
         logger.info(f"🚀 Начинаем обработку запроса для {user_id}")
-        await process_query(message, user_id)
+        await process_query_local_api(message, user_id)
 
     except Exception as e:
         logger.error(f"❌ Ошибка в /ask: {e}\n{traceback.format_exc()}")
@@ -151,21 +157,21 @@ async def handle_files(message: Message):
         if user_id not in user_data:
             user_data[user_id] = {"texts": [], "files": []}
 
-        file_data, file_type = None, None
+        file_data, file_type, file_name = None, None, None
 
         if message.photo:
             file_id = message.photo[-1].file_id
-            file_data, file_type = await download_file(file_id)
+            file_data, file_type, file_name = await download_file(file_id)
         elif message.document:
             file_id = message.document.file_id
-            file_data, file_type = await download_file(file_id)
+            file_data, file_type, file_name = await download_file(file_id)
 
         if file_data and file_type:
-            # Конвертируем в base64 для API
-            file_base64 = base64.b64encode(file_data).decode('utf-8')
+            # Сохраняем информацию о файле
             user_data[user_id]["files"].append({
-                "data": file_base64,
-                "type": file_type
+                "name": file_name,
+                "type": file_type,
+                "data": base64.b64encode(file_data).decode('utf-8')
             })
             await message.answer(f"✅ Файл ({file_type}) сохранен. Добавьте текст или отправьте /ask для запроса")
             logger.debug(f"💾 Файл сохранен для {user_id}, всего файлов: {len(user_data[user_id]['files'])}")
@@ -205,7 +211,7 @@ async def handle_text(message: Message):
 
 
 # Скачивание файла из Telegram
-async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
+async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, None, None]:
     try:
         logger.debug(f"📥 Скачивание файла {file_id}")
         file = await bot.get_file(file_id)
@@ -215,46 +221,48 @@ async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
             async with session.get(file_url) as response:
                 if response.status != 200:
                     logger.error(f"❌ Ошибка скачивания файла: статус {response.status}")
-                    return None, None
+                    return None, None, None
 
                 file_data = await response.read()
                 logger.debug(f"✅ Файл скачан, размер: {len(file_data)} байт")
 
                 # Определяем тип файла
-                file_extension = file.file_path.split('.')[-1].lower()
-                if file_extension in ['jpg', 'jpeg', 'png', 'gif']:
+                file_extension = file.file_path.split('.')[-1].lower() if '.' in file.file_path else ''
+                file_name = os.path.basename(file.file_path) if file.file_path else f"file_{file_id}.{file_extension}"
+
+                if file_extension in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif']:
                     file_type = "image"
                 elif file_extension == 'pdf':
                     file_type = "pdf"
                 else:
-                    file_type = "unknown"
+                    file_type = "document"
 
                 logger.debug(f"📄 Тип файла определен как: {file_type}")
-                return file_data, file_type
+                return file_data, file_type, file_name
 
     except Exception as e:
-        logger.error(f"❌ Error downloading file: {e}\n{traceback.format_exc()}")
-        return None, None
+        logger.error(f"Error downloading file: {e}\n{traceback.format_exc()}")
+        return None, None, None
 
 
-# Обработка запроса к модели
-async def process_query(message: Message, user_id: int):
+# Обработка запроса к локальной модели
+async def process_query_local_api(message: Message, user_id: int):
     try:
-        logger.debug(f"🔧 process_query начат для {user_id}")
+        logger.debug(f"process_query начат для {user_id}")
         await message.answer("⏳ Обрабатываю запрос...")
 
         # Формируем данные для API
         api_data = {
             "texts": user_data[user_id]["texts"],
-            "files": user_data[user_id]["files"]
+            "files": user_data[user_id]["files"],
+            "temperature": 0.7,
+            "max_tokens": 2000
         }
 
         logger.debug(f"📦 Данные для API: {len(api_data['texts'])} текстов, {len(api_data['files'])} файлов")
 
         async with aiohttp.ClientSession() as session:
-            logger.debug("🌐 Отправка запроса к модели")
-            response = await query_model(session, api_data)
-            logger.debug(f"✅ Получен ответ от модели: {response}")
+            response = await query_model_local_api(session, api_data)
             await send_response(message, response)
 
         # Очищаем данные после ответа
@@ -266,49 +274,114 @@ async def process_query(message: Message, user_id: int):
         await message.answer("❌ Произошла ошибка при обработке запроса к модели")
 
 
-# Запрос к модели на DataSphere
-async def query_model(session: aiohttp.ClientSession, data: dict) -> dict:
-    try:
-        logger.debug(
-            f"🌐 Запрос к {MODEL_API_URL} с данными: {len(data.get('texts', []))} текстов, {len(data.get('files', []))} файлов")
+async def prepare_prompt(data: Dict[str, Any]) -> str:
+    texts = data.get("texts", [])
+    files = data.get("files", [])
 
-        async with session.post(MODEL_API_URL, json=data) as response:
-            response_text = await response.text()
-            logger.debug(f"📨 Ответ API: статус {response.status}, тело: {response_text[:500]}...")
+    parts = []
+
+    # Добавляем тексты
+    if texts:
+        if len(texts) == 1:
+            parts.append(texts[0])
+        else:
+            for i, text in enumerate(texts, 1):
+                parts.append(f"Текст {i}:\n{text}")
+
+    # Добавляем информацию о файлах
+    if files:
+        files_info = ["Приложенные файлы:"]
+        for i, file_info in enumerate(files, 1):
+            files_info.append(f"{i}. {file_info['name']} ({file_info['type']})")
+            # Можно добавить базовую информацию о содержимом файла
+            if file_info['type'] == 'image':
+                files_info.append(f"   [Изображение, размер: {len(base64.b64decode(file_info['data']))} байт]")
+            elif file_info['type'] == 'pdf':
+                files_info.append(f"   [PDF документ, размер: {len(base64.b64decode(file_info['data']))} байт]")
+        parts.append("\n".join(files_info))
+
+    return "\n\n".join(parts)
+
+
+async def query_model_local_api(session: aiohttp.ClientSession, data: dict) -> dict:
+    """
+    Улучшенная функция запроса к локальной модели с обработкой ошибок
+    """
+    try:
+        logger.debug(f"🌐 Запрос к LM Studio API")
+
+        # Формируем промпт из текстов и информации о файлах
+        user_content = await prepare_prompt(data)
+
+        # Подготавливаем данные для LM Studio API
+        api_data = {
+            "model": "local-model",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": user_content
+                }
+            ],
+            "temperature": data.get("temperature", 0.7),
+            "max_tokens": data.get("max_tokens", 1000),
+            "stream": False
+        }
+
+        logger.debug(f"📤 Отправка запроса к {MODEL_API_URL}")
+
+        # Увеличиваем таймаут для стабильности
+        timeout = aiohttp.ClientTimeout(total=120)
+
+        async with session.post(
+                MODEL_API_URL,
+                json=api_data,
+                timeout=timeout
+        ) as response:
 
             if response.status != 200:
-                logger.error(f"❌ Ошибка API: статус {response.status}")
+                error_text = await response.text()
+                logger.error(f"❌ Ошибка API: статус {response.status}, ответ: {error_text}")
                 return {"text": f"❌ Ошибка сервера: статус {response.status}"}
 
-            return await response.json()
+            result = await response.json()
+            logger.debug(f"✅ Получен ответ от API")
+
+            # Извлекаем текстовый ответ из структуры LM Studio
+            if "choices" in result and len(result["choices"]) > 0:
+                assistant_message = result["choices"][0].get("message", {})
+                response_text = assistant_message.get("content", "Пустой ответ от модели")
+
+                return {
+                    "text": response_text,
+                    "full_response": result,
+                    "usage": result.get("usage", {})
+                }
+            else:
+                logger.warning("⚠️ Неожиданный формат ответа от LM Studio")
+                return {"text": "Не удалось получить ответ от модели"}
+
+    except asyncio.TimeoutError:
+        logger.error("⏰ Таймаут запроса к модели")
+        return {"text": "⏰ Таймаут при запросе к модели. Попробуйте позже."}
+    except aiohttp.ClientConnectorError:
+        logger.error("🔌 Ошибка подключения к LM Studio")
+        return {"text": "🔌 Не удалось подключиться к модели. Убедитесь, что LM Studio запущен."}
     except Exception as e:
-        logger.error(f"❌ API error: {e}\n{traceback.format_exc()}")
-        return {"text": "❌ Ошибка запроса к модели"}
+        logger.error(f"❌ Ошибка в query_model_local_api: {e}\n{traceback.format_exc()}")
+        return {"text": f"❌ Ошибка при запросе к модели: {str(e)}"}
 
 
 # Отправка ответа пользователю
 async def send_response(message: Message, response_data: dict):
     try:
-        logger.debug(f"📤 Отправка ответа: {response_data}")
         text_response = response_data.get("text", "")
-        image_data = response_data.get("image")
 
-        if image_data:
-            # Декодируем base64 изображение
-            if isinstance(image_data, str) and image_data.startswith('data:image'):
-                image_data = image_data.split(',')[1]
+        # Обрезаем слишком длинные ответы для Telegram
+        if len(text_response) > 4000:
+            text_response = text_response[:4000] + "\n\n... (сообщение обрезано)"
 
-            try:
-                image_bytes = base64.b64decode(image_data)
-                image_file = BufferedInputFile(image_bytes, filename="response.png")
-                await message.answer_photo(photo=image_file, caption=text_response)
-                logger.debug("✅ Ответ отправлен как фото")
-            except Exception as e:
-                logger.error(f"❌ Error decoding image: {e}\n{traceback.format_exc()}")
-                await message.answer(text_response + "\n\n⚠️ Не удалось отобразить изображение")
-        else:
-            await message.answer(text_response)
-            logger.debug("✅ Ответ отправлен как текст")
+        await message.answer(text_response)
+        logger.debug("✅ Ответ отправлен пользователю")
 
     except Exception as e:
         logger.error(f"❌ Ошибка в send_response: {e}\n{traceback.format_exc()}")
@@ -328,6 +401,19 @@ async def test_bot():
     try:
         me = await bot.get_me()
         logger.info(f"🤖 Бот @{me.username} успешно инициализирован")
+
+        # Проверяем доступность LM Studio
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(MODEL_API_URL.replace('/v1/chat/completions', '/v1/models'),
+                                       timeout=10) as response:
+                    if response.status == 200:
+                        logger.info("✅ LM Studio доступен")
+                    else:
+                        logger.warning(f"⚠️ LM Studio отвечает с кодом {response.status}")
+            except Exception as e:
+                logger.warning(f"⚠️ LM Studio недоступен: {e}")
+
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации бота: {e}")
