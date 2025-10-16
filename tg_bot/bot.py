@@ -261,6 +261,8 @@ async def handle_unsupported_types(message: Message):
 # Обработка запроса к модели
 async def process_query(message: Message, user_id: int, question: str):
     try:
+        if user_size_data[user_id] >= 2097152:
+            await message.answer("❌ Превышен размер документов. Ограничение до 2 Мб")
         logger.debug(f"🔧 process_query начат для {user_id}")
         await message.answer("⏳ Обрабатываю запрос...")
         # Получаем сохраненный файлы
@@ -272,11 +274,10 @@ async def process_query(message: Message, user_id: int, question: str):
         images, prompt = prepare_data_for_model(prepare_data, question)
 
         # Получаем ответ от модели
-        # answer = generate_answer(images, prompt)
+        answer = generate_answer(images, prompt)
 
         # Отправляем ответ пользователю
-        # await send_response(message, answer)
-        await send_response(message, "atomic<bool>")
+        await send_response(message, answer)
 
         logger.info(f"✅ Запрос успешно обработан для {user_id}")
 
