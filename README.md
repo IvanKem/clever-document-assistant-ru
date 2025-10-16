@@ -8,6 +8,7 @@ Documents AI assistant for visual question answering
 
 ## Project Organization
 
+
 clever-document-assistant-ru/
 ├── LICENSE
 ├── Makefile
