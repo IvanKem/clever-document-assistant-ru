@@ -14,6 +14,7 @@ import traceback
 from PIL import Image
 from pdf2image import convert_from_bytes
 #from inference_model import generate_answer
+import fitz
 
 # Настройки
 BOT_TOKEN = "7946330860:AAE0bXpkdVOzjFqN4bIjLGrPFbef2z0nocQ"
@@ -156,13 +157,16 @@ def prepare_data_for_model(file_data: bytes, file_type: str, question: str) -> t
     """
     try:
         logger.debug("🛠️ Подготовка данных для модели")
-
+        #todo: Переделать обработку pdf файла
         if file_type == "pdf":
-            # Конвертируем PDF в изображение
+            # # Конвертируем PDF в изображение
             logger.debug("📄 Конвертируем PDF в изображение")
-            images = convert_from_bytes(file_data)
+            images = fitz.open(stream=file_data, filetype=file_type)
+
             if images:
-                image = images[0]  # Берем первую страницу
+                pix = images.load_page(0).get_pixmap(dpi=200)
+                mode = "RGBA" if pix.alpha else "RGB"
+                image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
                 logger.debug(f"✅ PDF сконвертирован в изображение, размер: {image.size}")
             else:
                 raise ValueError("Не удалось конвертировать PDF в изображение")
