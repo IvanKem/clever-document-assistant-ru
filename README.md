@@ -4,7 +4,7 @@
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-Documents AI assistant for questions answering 
+Documents AI assistant for visual question answering 
 
 ## Project Organization
 
