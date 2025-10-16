@@ -64,9 +64,9 @@ clever-document-assistant-ru/
 │   │   └── inference/
 │   │       ├── 6.0-florence-evaluation-test.ipynb
 │   │       └── 6.1-florence-evaluation-wer-cer.ipynb
-│   └── florence_2_vl/
+│   └── florence_vl/
 │       └──  data_processing/
-│           └── 7.0-data-syntesis.ipynb
+│           └── 7.0-feature-extraction.ipynb
 │
 ├── references/
 │   ├── papers/
