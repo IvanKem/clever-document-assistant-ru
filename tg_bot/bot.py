@@ -10,11 +10,11 @@ from aiogram.filters import Command
 import logging
 import traceback
 from PIL import Image
-# from inference_model import generate_answer
+from inference_model import generate_answer
 import fitz
 
 # Настройки
-BOT_TOKEN = "8382287397:AAHWlAVCK6fXPLYuVvNpR22EXoyDl090Z_Y"
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
 # Инициализация
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
