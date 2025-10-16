@@ -58,8 +58,8 @@ async def start_handler(message: Message):
         """
         await message.answer(welcome_text)
         logger.info(f"✅ /start успешно обработан для {message.from_user.id}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка в /start: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в /start: {ex}\n{traceback.format_exc()}")
         await message.answer("Произошла ошибка при обработке команды /start")
 
 
@@ -82,8 +82,8 @@ async def cmd_help(message: Message):
         """
         await message.answer(help_text)
         logger.info(f"✅ /help успешно обработан для {message.from_user.id}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка в /help: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в /help: {ex}\n{traceback.format_exc()}")
         await message.answer("Произошла ошибка при обработке команды /help")
 
 
@@ -105,8 +105,8 @@ async def clear_handler(message: Message):
             logger.info(f"✅ Инициализированы новые данные для {user_id}")
             await message.answer("✅ Данные инициализированы")
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка в /restart: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в /restart: {ex}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при очистке данных")
 
 
@@ -136,78 +136,9 @@ async def ask_handler(message: Message):
         logger.info(f"🚀 Начинаем обработку запроса для {user_id}")
         await process_query_local_api(message, user_id)
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка в /ask: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в /ask: {ex}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при обработке запроса")
-
-
-# Обработчик только для файлов (без текста)
-@dp.message(
-    F.content_type.in_({
-        ContentType.PHOTO,
-        ContentType.DOCUMENT
-    })
-)
-async def handle_files(message: Message):
-    user_id = message.from_user.id
-    logger.debug(f"📎 Получен файл от {user_id}: тип={message.content_type}")
-
-    try:
-        # Инициализация данных пользователя
-        if user_id not in user_data:
-            user_data[user_id] = {"texts": [], "files": []}
-
-        file_data, file_type, file_name = None, None, None
-
-        if message.photo:
-            file_id = message.photo[-1].file_id
-            file_data, file_type, file_name = await download_file(file_id)
-        elif message.document:
-            file_id = message.document.file_id
-            file_data, file_type, file_name = await download_file(file_id)
-
-        if file_data and file_type:
-            # Сохраняем информацию о файле
-            user_data[user_id]["files"].append({
-                "name": file_name,
-                "type": file_type,
-                "data": base64.b64encode(file_data).decode('utf-8')
-            })
-            await message.answer(f"✅ Файл ({file_type}) сохранен. Добавьте текст или отправьте /ask для запроса")
-            logger.debug(f"💾 Файл сохранен для {user_id}, всего файлов: {len(user_data[user_id]['files'])}")
-        else:
-            await message.answer("❌ Не удалось обработать файл")
-            logger.error(f"❌ Ошибка обработки файла от {user_id}")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка в handle_files: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Произошла ошибка при обработке файла")
-
-
-# Обработчик текста (кроме команд)
-@dp.message(F.content_type == ContentType.TEXT)
-async def handle_text(message: Message):
-    user_id = message.from_user.id
-
-    # Пропускаем команды - они обрабатываются отдельно
-    if message.text.startswith('/'):
-        logger.debug(f"⚡ Команда {message.text} передана другому обработчику")
-        return
-
-    logger.debug(f"📝 Получен текст от {user_id}: {message.text[:50]}...")
-
-    try:
-        # Инициализация данных пользователя
-        if user_id not in user_data:
-            user_data[user_id] = {"texts": [], "files": []}
-
-        user_data[user_id]["texts"].append(message.text)
-        await message.answer("✅ Текст сохранен. Добавьте файлы или отправьте /ask для запроса")
-        logger.debug(f"💾 Текст сохранен для {user_id}, всего текстов: {len(user_data[user_id]['texts'])}")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка в handle_text: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Произошла ошибка при обработке текста")
 
 
 # Скачивание файла из Telegram
@@ -240,9 +171,114 @@ async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, No
                 logger.debug(f"📄 Тип файла определен как: {file_type}")
                 return file_data, file_type, file_name
 
-    except Exception as e:
-        logger.error(f"Error downloading file: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"Error downloading file: {ex}\n{traceback.format_exc()}")
         return None, None, None
+
+
+# Обработчик только для файлов (без текста)
+@dp.message(
+    F.content_type.in_({
+        ContentType.PHOTO,
+        ContentType.DOCUMENT
+    })
+)
+async def handle_files(message: Message):
+    user_id = message.from_user.id
+    logger.debug(f"📎 Получен файл от {user_id}: тип={message.content_type}")
+
+    try:
+        # Инициализация данных пользователя
+        if user_id not in user_data:
+            user_data[user_id] = {"texts": [], "files": []}
+
+        file_data, file_type, file_name = None, None, None
+
+        if message.photo:
+            file_id = message.photo[-1].file_id
+            file_data, file_type, file_name = await download_file(file_id)
+        elif message.document:
+            file_id = message.document.file_id
+            file_data, file_type, file_name = await download_file(file_id)
+
+        if file_data and file_type:
+            # Проверяем поддерживаемые форматы файлов
+            if file_type not in ["image", "pdf"]:
+                await message.answer(f"❌ Формат файла {file_name} не поддерживается. Отправьте изображение или PDF.")
+                logger.warning(f"⚠️ Неподдерживаемый формат файла от {user_id}: {file_type}")
+                return
+
+            # Сохраняем информацию о файле
+            user_data[user_id]["files"].append({
+                "name": file_name,
+                "type": file_type,
+                "data": base64.b64encode(file_data).decode('utf-8')
+            })
+            await message.answer(f"✅ Файл ({file_type}) сохранен. Добавьте текст или отправьте /ask для запроса")
+            logger.debug(f"💾 Файл сохранен для {user_id}, всего файлов: {len(user_data[user_id]['files'])}")
+        else:
+            await message.answer("❌ Не удалось обработать файл")
+            logger.error(f"❌ Ошибка обработки файла от {user_id}")
+
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в handle_files: {ex}\n{traceback.format_exc()}")
+        await message.answer("❌ Произошла ошибка при обработке файла")
+
+
+# Обработчик неподдерживаемых типов сообщений
+@dp.message()
+async def handle_unsupported_types(message: Message):
+    user_id = message.from_user.id
+    content_type = message.content_type
+
+    logger.warning(f"⚠️ Получено неподдерживаемое сообщение от {user_id}: тип={content_type}")
+
+    # Определяем тип контента для понятного сообщения пользователю
+    content_type_names = {
+        ContentType.VIDEO: "видео",
+        ContentType.VOICE: "голосовые сообщения",
+        ContentType.VIDEO_NOTE: "кружочки",
+        ContentType.STICKER: "стикеры",
+        ContentType.AUDIO: "аудиофайлы",
+        ContentType.ANIMATION: "GIF-анимации",
+        ContentType.CONTACT: "контакты",
+        ContentType.LOCATION: "геолокации",
+        ContentType.POLL: "опросы",
+        ContentType.DICE: "кости",
+    }
+
+    content_name = content_type_names.get(content_type, "этот тип сообщений")
+
+    unsupported_text = f"""❌ Извините, но {content_name} не поддерживаются."""
+
+    await message.answer(unsupported_text)
+    logger.debug(f"⚠️ Уведомление о неподдерживаемом формате отправлено {user_id}")
+
+
+# Обработчик текста (кроме команд)
+@dp.message(F.content_type == ContentType.TEXT)
+async def handle_text(message: Message):
+    user_id = message.from_user.id
+
+    # Пропускаем команды - они обрабатываются отдельно
+    if message.text.startswith('/'):
+        logger.debug(f"⚡ Команда {message.text} передана другому обработчику")
+        return
+
+    logger.debug(f"📝 Получен текст от {user_id}: {message.text[:50]}...")
+
+    try:
+        # Инициализация данных пользователя
+        if user_id not in user_data:
+            user_data[user_id] = {"texts": [], "files": []}
+
+        user_data[user_id]["texts"].append(message.text)
+        await message.answer("✅ Текст сохранен. Добавьте файлы или отправьте /ask для запроса")
+        logger.debug(f"💾 Текст сохранен для {user_id}, всего текстов: {len(user_data[user_id]['texts'])}")
+
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в handle_text: {ex}\n{traceback.format_exc()}")
+        await message.answer("❌ Произошла ошибка при обработке текста")
 
 
 # Обработка запроса к локальной модели
@@ -269,8 +305,8 @@ async def process_query_local_api(message: Message, user_id: int):
         user_data[user_id] = {"texts": [], "files": []}
         logger.info(f"🎉 Запрос успешно обработан для {user_id}, данные очищены")
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка в process_query: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в process_query: {ex}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при обработке запроса к модели")
 
 
@@ -366,9 +402,9 @@ async def query_model_local_api(session: aiohttp.ClientSession, data: dict) -> d
     except aiohttp.ClientConnectorError:
         logger.error("🔌 Ошибка подключения к LM Studio")
         return {"text": "🔌 Не удалось подключиться к модели. Убедитесь, что LM Studio запущен."}
-    except Exception as e:
-        logger.error(f"❌ Ошибка в query_model_local_api: {e}\n{traceback.format_exc()}")
-        return {"text": f"❌ Ошибка при запросе к модели: {str(e)}"}
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в query_model_local_api: {ex}\n{traceback.format_exc()}")
+        return {"text": f"❌ Ошибка при запросе к модели: {str(ex)}"}
 
 
 # Отправка ответа пользователю
@@ -383,8 +419,8 @@ async def send_response(message: Message, response_data: dict):
         await message.answer(text_response)
         logger.debug("✅ Ответ отправлен пользователю")
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка в send_response: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в send_response: {ex}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при отправке ответа")
 
 
@@ -411,12 +447,12 @@ async def test_bot():
                         logger.info("✅ LM Studio доступен")
                     else:
                         logger.warning(f"⚠️ LM Studio отвечает с кодом {response.status}")
-            except Exception as e:
-                logger.warning(f"⚠️ LM Studio недоступен: {e}")
+            except Exception as ex:
+                logger.warning(f"⚠️ LM Studio недоступен: {ex}")
 
         return True
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации бота: {e}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка инициализации бота: {ex}")
         return False
 
 
@@ -433,8 +469,8 @@ async def main():
 
     try:
         await dp.start_polling(bot)
-    except Exception as e:
-        logger.error(f"💥 Критическая ошибка при пуллинге: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"💥 Критическая ошибка при пуллинге: {ex}\n{traceback.format_exc()}")
 
 
 if __name__ == "__main__":

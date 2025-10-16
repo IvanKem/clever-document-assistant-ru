@@ -135,6 +135,41 @@ async def ask_handler(message: Message):
         await message.answer("❌ Произошла ошибка при обработке запроса")
 
 
+# Скачивание файла из Telegram
+async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, None, None]:
+    try:
+        logger.debug(f"📥 Скачивание файла {file_id}")
+        file = await bot.get_file(file_id)
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_url) as response:
+                if response.status != 200:
+                    logger.error(f"❌ Ошибка скачивания файла: статус {response.status}")
+                    return None, None, None
+
+                file_data = await response.read()
+                logger.debug(f"✅ Файл скачан, размер: {len(file_data)} байт")
+
+                # Определяем тип файла
+                file_extension = file.file_path.split('.')[-1].lower() if '.' in file.file_path else ''
+                file_name = os.path.basename(file.file_path) if file.file_path else f"file_{file_id}.{file_extension}"
+
+                if file_extension in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif']:
+                    file_type = "image"
+                elif file_extension == 'pdf':
+                    file_type = "pdf"
+                else:
+                    file_type = "document"
+
+                logger.debug(f"📄 Тип файла определен как: {file_type}")
+                return file_data, file_type, file_name
+
+    except Exception as ex:
+        logger.error(f"Error downloading file: {ex}\n{traceback.format_exc()}")
+        return None, None, None
+
+
 # Обработчик только для файлов (без текста)
 @dp.message(
     F.content_type.in_({
@@ -151,21 +186,27 @@ async def handle_files(message: Message):
         if user_id not in user_data:
             user_data[user_id] = {"texts": [], "files": []}
 
-        file_data, file_type = None, None
+        file_data, file_type, file_name = None, None, None
 
         if message.photo:
             file_id = message.photo[-1].file_id
-            file_data, file_type = await download_file(file_id)
+            file_data, file_type, file_name = await download_file(file_id)
         elif message.document:
             file_id = message.document.file_id
-            file_data, file_type = await download_file(file_id)
+            file_data, file_type, file_name = await download_file(file_id)
 
         if file_data and file_type:
-            # Конвертируем в base64 для API
-            file_base64 = base64.b64encode(file_data).decode('utf-8')
+            # Проверяем поддерживаемые форматы файлов
+            if file_type not in ["image", "pdf"]:
+                await message.answer(f"❌ Формат файла {file_name} не поддерживается. Отправьте изображение или PDF.")
+                logger.warning(f"⚠️ Неподдерживаемый формат файла от {user_id}: {file_type}")
+                return
+
+            # Сохраняем информацию о файле
             user_data[user_id]["files"].append({
-                "data": file_base64,
-                "type": file_type
+                "name": file_name,
+                "type": file_type,
+                "data": base64.b64encode(file_data).decode('utf-8')
             })
             await message.answer(f"✅ Файл ({file_type}) сохранен. Добавьте текст или отправьте /ask для запроса")
             logger.debug(f"💾 Файл сохранен для {user_id}, всего файлов: {len(user_data[user_id]['files'])}")
@@ -173,68 +214,40 @@ async def handle_files(message: Message):
             await message.answer("❌ Не удалось обработать файл")
             logger.error(f"❌ Ошибка обработки файла от {user_id}")
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка в handle_files: {e}\n{traceback.format_exc()}")
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в handle_files: {ex}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при обработке файла")
 
 
-# Обработчик текста (кроме команд)
-@dp.message(F.content_type == ContentType.TEXT)
-async def handle_text(message: Message):
+# Обработчик неподдерживаемых типов сообщений
+@dp.message()
+async def handle_unsupported_types(message: Message):
     user_id = message.from_user.id
+    content_type = message.content_type
 
-    # Пропускаем команды - они обрабатываются отдельно
-    if message.text.startswith('/'):
-        logger.debug(f"⚡ Команда {message.text} передана другому обработчику")
-        return
+    logger.warning(f"⚠️ Получено неподдерживаемое сообщение от {user_id}: тип={content_type}")
 
-    logger.debug(f"📝 Получен текст от {user_id}: {message.text[:50]}...")
+    # Определяем тип контента для понятного сообщения пользователю
+    content_type_names = {
+        ContentType.VIDEO: "видео",
+        ContentType.VOICE: "голосовые сообщения",
+        ContentType.VIDEO_NOTE: "кружочки",
+        ContentType.STICKER: "стикеры",
+        ContentType.AUDIO: "аудиофайлы",
+        ContentType.ANIMATION: "GIF-анимации",
+        ContentType.CONTACT: "контакты",
+        ContentType.LOCATION: "геолокации",
+        ContentType.POLL: "опросы",
+        ContentType.DICE: "кости",
+    }
 
-    try:
-        # Инициализация данных пользователя
-        if user_id not in user_data:
-            user_data[user_id] = {"texts": [], "files": []}
+    content_name = content_type_names.get(content_type, "этот тип сообщений")
 
-        user_data[user_id]["texts"].append(message.text)
-        await message.answer("✅ Текст сохранен. Добавьте файлы или отправьте /ask для запроса")
-        logger.debug(f"💾 Текст сохранен для {user_id}, всего текстов: {len(user_data[user_id]['texts'])}")
+    unsupported_text = f"""❌ Извините, но {content_name} не поддерживаются."""
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка в handle_text: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Произошла ошибка при обработке текста")
+    await message.answer(unsupported_text)
+    logger.debug(f"⚠️ Уведомление о неподдерживаемом формате отправлено {user_id}")
 
-
-# Скачивание файла из Telegram
-async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
-    try:
-        logger.debug(f"📥 Скачивание файла {file_id}")
-        file = await bot.get_file(file_id)
-        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(file_url) as response:
-                if response.status != 200:
-                    logger.error(f"❌ Ошибка скачивания файла: статус {response.status}")
-                    return None, None
-
-                file_data = await response.read()
-                logger.debug(f"✅ Файл скачан, размер: {len(file_data)} байт")
-
-                # Определяем тип файла
-                file_extension = file.file_path.split('.')[-1].lower()
-                if file_extension in ['jpg', 'jpeg', 'png', 'gif']:
-                    file_type = "image"
-                elif file_extension == 'pdf':
-                    file_type = "pdf"
-                else:
-                    file_type = "unknown"
-
-                logger.debug(f"📄 Тип файла определен как: {file_type}")
-                return file_data, file_type
-
-    except Exception as e:
-        logger.error(f"❌ Error downloading file: {e}\n{traceback.format_exc()}")
-        return None, None
 
 
 # Обработка запроса к модели
