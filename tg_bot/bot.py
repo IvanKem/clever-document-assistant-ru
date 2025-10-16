@@ -279,10 +279,10 @@ async def process_query(message: Message, user_id: int, question: str):
         images, prompt = prepare_data_for_model(prepare_data, question)
 
         # Получаем ответ от модели
-        # answer = generate_answer(images, prompt)
+        answer = generate_answer(images, prompt)
 
         # Отправляем ответ пользователю
-        # await send_response(message, answer)
+        await send_response(message, answer)
 
         logger.info(f"✅ Запрос успешно обработан для {user_id}")
 
