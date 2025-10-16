@@ -10,11 +10,11 @@ from aiogram.filters import Command
 import logging
 import traceback
 from PIL import Image
-from inference_model import generate_answer
+# from inference_model import generate_answer
 import fitz
 
 # Настройки
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = "8382287397:AAHWlAVCK6fXPLYuVvNpR22EXoyDl090Z_Y"
 
 # Инициализация
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -262,7 +262,7 @@ async def handle_unsupported_types(message: Message):
 async def process_query(message: Message, user_id: int, question: str):
     try:
         if user_size_data[user_id] >= 1048576:
-            await message.answer("❌ Превышен размер документов. Ограничение до 2 Мб")
+            await message.answer("❌ Превышен размер документов. Ограничение до 1 Мб")
             await message.answer("Данные очищены")
             del user_size_data[user_id]
             del user_data[user_id]
@@ -279,10 +279,10 @@ async def process_query(message: Message, user_id: int, question: str):
         images, prompt = prepare_data_for_model(prepare_data, question)
 
         # Получаем ответ от модели
-        answer = generate_answer(images, prompt)
+        # answer = generate_answer(images, prompt)
 
         # Отправляем ответ пользователю
-        await send_response(message, answer)
+        # await send_response(message, answer)
 
         logger.info(f"✅ Запрос успешно обработан для {user_id}")
 
@@ -325,8 +325,6 @@ def prepare_data_for_model(files: list[tuple[bytes, str]], question: str) -> tup
                     raise ValueError("Не удалось конвертировать PDF в изображение")
             else:
                 # Открываем изображение
-                print(file[0])
-                print(file[1])
                 image = Image.open(io.BytesIO(bytes(file[0])))
                 images.append(image)
                 logger.debug(f"✅ Изображение загружено, размер: {image.size}")
