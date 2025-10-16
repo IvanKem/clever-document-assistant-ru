@@ -1,4 +1,6 @@
 import asyncio
+import os
+import io
 import aiohttp
 import base64
 from aiogram import Bot, Dispatcher, F
@@ -6,13 +8,15 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, BufferedInputFile, ErrorEvent
 from aiogram.enums import ContentType, ParseMode
 from aiogram.filters import Command
-from decouple import config
+# from decouple import config
 import logging
 import traceback
+from PIL import Image
+from pdf2image import convert_from_bytes
+#from inference_model import generate_answer
 
 # Настройки
-BOT_TOKEN = config('BOT_TOKEN')
-MODEL_API_URL = config('MODEL_API_URL')
+BOT_TOKEN = "7946330860:AAE0bXpkdVOzjFqN4bIjLGrPFbef2z0nocQ"
 
 # Инициализация
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -43,9 +47,9 @@ async def start_handler(message: Message):
 • 🧠 Анализировать контент с помощью AI
 
 <b>Как работать:</b>
-1. Отправьте мне изображение или PDF файл
+1. Отправьте мне ОДНО изображение или PDF файл
 2. Я извлеку из него текст
-3. Задайте вопрос о содержимом документа
+3. Отправьте текст с вашим вопросом к документу
 4. Получите интеллектуальный ответ!
 
 Просто отправьте файл чтобы начать!
@@ -64,15 +68,16 @@ async def cmd_help(message: Message):
         help_text = """
 <b>Инструкция по использованию:</b>
 
-1. <b>Отправьте файл</b> - изображение (jpg, png) или PDF
+1. <b>Отправьте ОДИН файл</b> - изображение (jpg, png) или PDF
 2. <b>Дождитесь обработки</b> - я извелку текст через OCR
-3. <b>Задайте вопрос</b> - напишите что вас интересует в документе
+3. <b>Отправьте текст с вопросом</b> - напишите что вас интересует в документе
 4. <b>Получите ответ</b> - AI проанализирует содержимое
 
 <b>Поддерживаемые форматы:</b>
 • Изображения: JPG, PNG, JPEG, BMP, TIFF
-• Видео: MP4, AVI, MOV, WEBM
 • Документы: PDF
+
+<b>После обработки файла вы не сможете добавить новые, пока не используете /restart</b>
         """
         await message.answer(help_text)
         logger.info(f"✅ /help успешно обработан для {message.from_user.id}")
@@ -89,50 +94,16 @@ async def clear_handler(message: Message):
 
     try:
         if user_id in user_data:
-            old_files_count = len(user_data[user_id]["files"])
-            old_texts_count = len(user_data[user_id]["texts"])
-            user_data[user_id] = {"texts": [], "files": []}
-            logger.info(f"✅ Данные очищены для {user_id}: было {old_files_count} файлов, {old_texts_count} текстов")
-            await message.answer("✅ Данные успешно очищены")
+            del user_data[user_id]
+            logger.info(f"✅ Данные очищены для {user_id}")
+            await message.answer("✅ Данные успешно очищены. Теперь вы можете отправить новый файл.")
         else:
-            user_data[user_id] = {"texts": [], "files": []}
-            logger.info(f"✅ Инициализированы новые данные для {user_id}")
-            await message.answer("✅ Данные инициализированы")
+            logger.info(f"✅ Нет данных для очистки у {user_id}")
+            await message.answer("✅ Нет данных для очистки. Вы можете отправить файл.")
 
     except Exception as e:
         logger.error(f"❌ Ошибка в /restart: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при очистке данных")
-
-
-# Обработчик команды /ask
-@dp.message(Command("ask"))
-async def ask_handler(message: Message):
-    user_id = message.from_user.id
-    logger.info(f"❓ /ask от пользователя {user_id}")
-
-    try:
-        # Детальная проверка состояния данных
-        if user_id not in user_data:
-            logger.warning(f"⚠️ Пользователь {user_id} не имеет данных")
-            await message.answer("❌ Нет данных для запроса. Сначала отправьте текст или файлы.")
-            return
-
-        files_count = len(user_data[user_id]["files"])
-        texts_count = len(user_data[user_id]["texts"])
-
-        logger.debug(f"📊 Данные пользователя {user_id}: {files_count} файлов, {texts_count} текстов")
-
-        if files_count == 0 and texts_count == 0:
-            logger.warning(f"⚠️ Пользователь {user_id} имеет пустые данные")
-            await message.answer("❌ Нет данных для запроса. Сначала отправьте текст или файлы.")
-            return
-
-        logger.info(f"🚀 Начинаем обработку запроса для {user_id}")
-        await process_query(message, user_id)
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка в /ask: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Произошла ошибка при обработке запроса")
 
 
 # Скачивание файла из Telegram
@@ -170,6 +141,46 @@ async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, No
         return None, None, None
 
 
+# Функция для подготовки данных к запросу модели
+def prepare_data_for_model(file_data: bytes, file_type: str, question: str) -> tuple[Image.Image, str]:
+    """
+    Подготавливает данные для запроса к модели.
+
+    Args:
+        file_data: Данные файла в байтах
+        file_type: Тип файла ('image' или 'pdf')
+        question: Текст вопроса пользователя
+
+    Returns:
+        tuple: (PIL.Image объект, текст запроса)
+    """
+    try:
+        logger.debug("🛠️ Подготовка данных для модели")
+
+        if file_type == "pdf":
+            # Конвертируем PDF в изображение
+            logger.debug("📄 Конвертируем PDF в изображение")
+            images = convert_from_bytes(file_data)
+            if images:
+                image = images[0]  # Берем первую страницу
+                logger.debug(f"✅ PDF сконвертирован в изображение, размер: {image.size}")
+            else:
+                raise ValueError("Не удалось конвертировать PDF в изображение")
+        else:
+            # Открываем изображение
+            image = Image.open(io.BytesIO(file_data))
+            logger.debug(f"✅ Изображение загружено, размер: {image.size}")
+
+        # Формируем полный запрос
+        full_query = f"Вопрос: {question}\n\nПроанализируй содержимое документа и дай развернутый ответ."
+
+        return image, full_query
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при подготовке данных: {e}\n{traceback.format_exc()}")
+        raise
+
+
 # Обработчик только для файлов (без текста)
 @dp.message(
     F.content_type.in_({
@@ -182,9 +193,10 @@ async def handle_files(message: Message):
     logger.debug(f"📎 Получен файл от {user_id}: тип={message.content_type}")
 
     try:
-        # Инициализация данных пользователя
-        if user_id not in user_data:
-            user_data[user_id] = {"texts": [], "files": []}
+        # Проверяем, есть ли уже файл у пользователя
+        if user_id in user_data and "file" in user_data[user_id]:
+            await message.answer("❌ У вас уже есть файл. Используйте /restart для очистки, чтобы отправить новый файл.")
+            return
 
         file_data, file_type, file_name = None, None, None
 
@@ -202,14 +214,16 @@ async def handle_files(message: Message):
                 logger.warning(f"⚠️ Неподдерживаемый формат файла от {user_id}: {file_type}")
                 return
 
-            # Сохраняем информацию о файле
-            user_data[user_id]["files"].append({
-                "name": file_name,
-                "type": file_type,
-                "data": base64.b64encode(file_data).decode('utf-8')
-            })
-            await message.answer(f"✅ Файл ({file_type}) сохранен. Добавьте текст или отправьте /ask для запроса")
-            logger.debug(f"💾 Файл сохранен для {user_id}, всего файлов: {len(user_data[user_id]['files'])}")
+            # Сохраняем информацию о файле (только один файл)
+            user_data[user_id] = {
+                "file": {
+                    "name": file_name,
+                    "type": file_type,
+                    "data": base64.b64encode(file_data).decode('utf-8')
+                }
+            }
+            await message.answer(f"✅ Файл ({file_type}) сохранен. Теперь отправьте текст с вашим вопросом к документу.")
+            logger.debug(f"💾 Файл сохранен для {user_id}")
         else:
             await message.answer("❌ Не удалось обработать файл")
             logger.error(f"❌ Ошибка обработки файла от {user_id}")
@@ -217,6 +231,40 @@ async def handle_files(message: Message):
     except Exception as ex:
         logger.error(f"❌ Ошибка в handle_files: {ex}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при обработке файла")
+
+
+# Обработчик текста (кроме команд) - для приема промпта от пользователя
+@dp.message(F.content_type == ContentType.TEXT)
+async def handle_text(message: Message):
+    user_id = message.from_user.id
+
+    # Пропускаем команды - они обрабатываются отдельно
+    if message.text.startswith('/'):
+        logger.debug(f"⚡ Команда {message.text} передана другому обработчику")
+        return
+
+    logger.debug(f"📝 Получен текст от {user_id}: {message.text[:50]}...")
+
+    try:
+        # Проверяем наличие файла
+        if user_id not in user_data or "file" not in user_data[user_id]:
+            logger.warning(f"⚠️ Пользователь {user_id} не имеет файла")
+            await message.answer("❌ Нет файла для запроса. Сначала отправьте файл (изображение или PDF).")
+            return
+
+        # Получаем текст вопроса
+        question = message.text
+
+        if not question.strip():
+            await message.answer("❌ Пожалуйста, укажите вопрос")
+            return
+
+        logger.info(f"🚀 Начинаем обработку запроса для {user_id}")
+        await process_query(message, user_id, question)
+
+    except Exception as ex:
+        logger.error(f"❌ Ошибка в handle_text: {ex}\n{traceback.format_exc()}")
+        await message.answer("❌ Произошла ошибка при обработке текста")
 
 
 # Обработчик неподдерживаемых типов сообщений
@@ -229,6 +277,7 @@ async def handle_unsupported_types(message: Message):
 
     # Определяем тип контента для понятного сообщения пользователю
     content_type_names = {
+        ContentType.TEXT: "текстовые сообщения",
         ContentType.VIDEO: "видео",
         ContentType.VOICE: "голосовые сообщения",
         ContentType.VIDEO_NOTE: "кружочки",
@@ -243,85 +292,47 @@ async def handle_unsupported_types(message: Message):
 
     content_name = content_type_names.get(content_type, "этот тип сообщений")
 
-    unsupported_text = f"""❌ Извините, но {content_name} не поддерживаются."""
+    unsupported_text = f"""❌ Извините, но {content_name} не поддерживаются.
+
+Отправьте изображение или PDF файл, затем отправьте текст с вашим вопросом."""
 
     await message.answer(unsupported_text)
     logger.debug(f"⚠️ Уведомление о неподдерживаемом формате отправлено {user_id}")
 
 
-
 # Обработка запроса к модели
-async def process_query(message: Message, user_id: int):
+async def process_query(message: Message, user_id: int, question: str):
     try:
         logger.debug(f"🔧 process_query начат для {user_id}")
         await message.answer("⏳ Обрабатываю запрос...")
 
-        # Формируем данные для API
-        api_data = {
-            "texts": user_data[user_id]["texts"],
-            "files": user_data[user_id]["files"]
-        }
+        # Получаем сохраненный файл
+        file_info = user_data[user_id]["file"]
+        file_data = base64.b64decode(file_info["data"])
+        file_type = file_info["type"]
 
-        logger.debug(f"📦 Данные для API: {len(api_data['texts'])} текстов, {len(api_data['files'])} файлов")
+        # Подготавливаем данные для модели
+        image, full_query = prepare_data_for_model(file_data, file_type, question)
 
-        async with aiohttp.ClientSession() as session:
-            logger.debug("🌐 Отправка запроса к модели")
-            response = await query_model(session, api_data)
-            logger.debug(f"✅ Получен ответ от модели: {response}")
-            await send_response(message, response)
+        # Получаем ответ от модели
+        #answer = generate_answer(image, full_query)
 
-        # Очищаем данные после ответа
-        user_data[user_id] = {"texts": [], "files": []}
-        logger.info(f"🎉 Запрос успешно обработан для {user_id}, данные очищены")
+        # Отправляем ответ пользователю
+        #await send_response(message, answer)
+
+        logger.info(f"✅ Запрос успешно обработан для {user_id}")
 
     except Exception as e:
         logger.error(f"❌ Ошибка в process_query: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при обработке запроса к модели")
 
 
-# Запрос к модели на DataSphere
-async def query_model(session: aiohttp.ClientSession, data: dict) -> dict:
-    try:
-        logger.debug(
-            f"🌐 Запрос к {MODEL_API_URL} с данными: {len(data.get('texts', []))} текстов, {len(data.get('files', []))} файлов")
-
-        async with session.post(MODEL_API_URL, json=data) as response:
-            response_text = await response.text()
-            logger.debug(f"📨 Ответ API: статус {response.status}, тело: {response_text[:500]}...")
-
-            if response.status != 200:
-                logger.error(f"❌ Ошибка API: статус {response.status}")
-                return {"text": f"❌ Ошибка сервера: статус {response.status}"}
-
-            return await response.json()
-    except Exception as e:
-        logger.error(f"❌ API error: {e}\n{traceback.format_exc()}")
-        return {"text": "❌ Ошибка запроса к модели"}
-
-
 # Отправка ответа пользователю
-async def send_response(message: Message, response_data: dict):
+async def send_response(message: Message, response_text: str):
     try:
-        logger.debug(f"📤 Отправка ответа: {response_data}")
-        text_response = response_data.get("text", "")
-        image_data = response_data.get("image")
-
-        if image_data:
-            # Декодируем base64 изображение
-            if isinstance(image_data, str) and image_data.startswith('data:image'):
-                image_data = image_data.split(',')[1]
-
-            try:
-                image_bytes = base64.b64decode(image_data)
-                image_file = BufferedInputFile(image_bytes, filename="response.png")
-                await message.answer_photo(photo=image_file, caption=text_response)
-                logger.debug("✅ Ответ отправлен как фото")
-            except Exception as e:
-                logger.error(f"❌ Error decoding image: {e}\n{traceback.format_exc()}")
-                await message.answer(text_response + "\n\n⚠️ Не удалось отобразить изображение")
-        else:
-            await message.answer(text_response)
-            logger.debug("✅ Ответ отправлен как текст")
+        logger.debug(f"📤 Отправка ответа: {response_text[:100]}...")
+        await message.answer(response_text)
+        logger.debug("✅ Ответ отправлен как текст")
 
     except Exception as e:
         logger.error(f"❌ Ошибка в send_response: {e}\n{traceback.format_exc()}")
