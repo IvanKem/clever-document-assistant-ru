@@ -7,15 +7,14 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, ErrorEvent
 from aiogram.enums import ContentType, ParseMode
 from aiogram.filters import Command
-# from decouple import config
 import logging
 import traceback
 from PIL import Image
-# from inference_model import generate_answer
+from inference_model import generate_answer
 import fitz
 
 # Настройки
-BOT_TOKEN = "7946330860:AAE0bXpkdVOzjFqN4bIjLGrPFbef2z0nocQ"
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
 # Инициализация
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -23,6 +22,7 @@ dp = Dispatcher()
 
 # Хранилище пользовательских данных в памяти
 user_data = {}
+user_size_data = {}
 
 # Логирование
 logging.basicConfig(
@@ -104,7 +104,7 @@ async def clear_handler(message: Message):
 
 
 # Скачивание файла из Telegram
-async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
+async def download_file(file_id: str, user_id: str) -> tuple[bytes, str] | tuple[None, None]:
     try:
         logger.debug(f"📥 Скачивание файла {file_id}")
         file = await bot.get_file(file_id)
@@ -128,7 +128,13 @@ async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
                 else:
                     file_type = "document"
 
-                logger.debug(f"📄 Тип файла определен как: {file_type}")
+                logger.debug(f"📄 Тип файла определен как: {file_type}, размер файла: {file.file_size}")
+                # Добавление размера скаченного файла пользователя к суммарному размеру
+                if user_id in user_size_data:
+                    user_size_data[user_id] += file.file_size
+                else:
+                    user_size_data[user_id] = file.file_size
+
                 return file_data, file_type
 
     except Exception as ex:
@@ -152,10 +158,10 @@ async def handle_files(message: Message):
 
         if message.photo:
             file_id = message.photo[-1].file_id
-            file_data, file_type = await download_file(file_id)
+            file_data, file_type = await download_file(file_id, user_id)
         elif message.document:
             file_id = message.document.file_id
-            file_data, file_type = await download_file(file_id)
+            file_data, file_type = await download_file(file_id, user_id)
 
         if file_data and file_type:
             # Проверяем поддерживаемые форматы файлов
