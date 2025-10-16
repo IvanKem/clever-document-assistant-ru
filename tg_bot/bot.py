@@ -270,6 +270,7 @@ async def process_query(message: Message, user_id: int, question: str):
 
         # Отправляем ответ пользователю
         # await send_response(message, answer)
+        await send_response(message, "atomic<bool>")
 
         logger.info(f"✅ Запрос успешно обработан для {user_id}")
 
@@ -332,7 +333,7 @@ def prepare_data_for_model(files: list[tuple[bytes, str]], question: str) -> tup
 async def send_response(message: Message, response_text: str):
     try:
         logger.debug(f"📤 Отправка ответа: {response_text[:100]}...")
-        await message.answer(response_text)
+        await message.answer(response_text, parse_mode=None)
         logger.debug("✅ Ответ отправлен как текст")
 
     except Exception as e:
