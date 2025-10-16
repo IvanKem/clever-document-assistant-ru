@@ -1,39 +1,68 @@
 ---
-# Model Card for florence-2-large-ft
+base_model: unsloth/qwen2.5-vl-32b-instruct-bnb-4bit
+library_name: peft
+model_name: qwen2.5-vl-32b-ft
+tags:
+- base_model:adapter:unsloth/qwen2.5-vl-32b-instruct-bnb-4bit
+- lora
+- sft
+- transformers
+- trl
+- unsloth
+licence: license
+pipeline_tag: text-generation
+---
 
-This model is a fine-tuned version of [microsoft/Florence-2-large](https://huggingface.co/microsoft/Florence-2-large) for document understanding and visual question answering tasks.
+# Model Card for qwen2.5-vl-32b-ft
 
-## Model Description
+This model is a fine-tuned version of [unsloth/qwen2.5-vl-32b-instruct-bnb-4bit](https://huggingface.co/unsloth/qwen2.5-vl-32b-instruct-bnb-4bit).
+It has been trained using [TRL](https://github.com/huggingface/trl).
 
-Florence-2-large is a powerful vision foundation model that has been fine-tuned using full parameter fine-tuning (not LoRA) on custom training loops for enhanced document AI capabilities.
+## Model Repository
 
-## Quick Start
+**Full model weights and configuration available at:**  
+**[IvanKem/Qwen2.5-VL-32-unsloth-4bit-ft](https://huggingface.co/IvanKem/Qwen2.5-VL-32-unsloth-4bit-ft)**
+
+## Quick start
 
 ```python
-from transformers import AutoProcessor, AutoModelForCausalLM
-import torch
+from transformers import pipeline
 
-# Load model and processor
-model_name = "your-username/florence-2-large-ft"
-processor = AutoProcessor.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16,
-    device_map="auto"
-)
+question = "If you had a time machine, but could only go to the past or the future once and never return, which would you choose and why?"
+generator = pipeline("text-generation", model="IvanKem/Qwen2.5-VL-32-unsloth-4bit-ft", device="cuda")
+output = generator([{"role": "user", "content": question}], max_new_tokens=128, return_full_text=False)[0]
+print(output["generated_text"])
+```
 
-# Prepare inputs for document understanding
-prompt = "<OD>What is the total amount on this invoice?</OD>"
-inputs = processor(images=document_image, text=prompt, return_tensors="pt").to(model.device)
+## Training procedure
 
-# Generate response
-generated_ids = model.generate(
-    **inputs,
-    max_new_tokens=256,
-    do_sample=True,
-    temperature=0.7
-)
+ 
 
-generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-print(generated_text)
+
+This model was trained with SFT.
+
+### Framework versions
+
+- PEFT 0.17.1
+- TRL: 0.23.0
+- Transformers: 4.56.2
+- Pytorch: 2.8.0
+- Datasets: 4.2.0
+- Tokenizers: 0.22.1
+
+## Citations
+
+
+
+Cite TRL as:
+    
+```bibtex
+@misc{vonwerra2022trl,
+	title        = {{TRL: Transformer Reinforcement Learning}},
+	author       = {Leandro von Werra and Younes Belkada and Lewis Tunstall and Edward Beeching and Tristan Thrush and Nathan Lambert and Shengyi Huang and Kashif Rasul and Quentin Gallou{\'e}dec},
+	year         = 2020,
+	journal      = {GitHub repository},
+	publisher    = {GitHub},
+	howpublished = {\url{https://github.com/huggingface/trl}}
+}
 ```
