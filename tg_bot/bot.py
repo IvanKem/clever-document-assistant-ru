@@ -1,19 +1,17 @@
 import asyncio
-import os
 import io
 import aiohttp
 import base64
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import Message, BufferedInputFile, ErrorEvent
+from aiogram.types import Message, ErrorEvent
 from aiogram.enums import ContentType, ParseMode
 from aiogram.filters import Command
 # from decouple import config
 import logging
 import traceback
 from PIL import Image
-from pdf2image import convert_from_bytes
-#from inference_model import generate_answer
+# from inference_model import generate_answer
 import fitz
 
 # Настройки
@@ -92,7 +90,6 @@ async def cmd_help(message: Message):
 async def clear_handler(message: Message):
     user_id = message.from_user.id
     logger.info(f"🔄 /restart от пользователя {user_id}")
-
     try:
         if user_id in user_data:
             del user_data[user_id]
@@ -101,14 +98,13 @@ async def clear_handler(message: Message):
         else:
             logger.info(f"✅ Нет данных для очистки у {user_id}")
             await message.answer("✅ Нет данных для очистки. Вы можете отправить файл.")
-
     except Exception as e:
         logger.error(f"❌ Ошибка в /restart: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при очистке данных")
 
 
 # Скачивание файла из Telegram
-async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, None, None]:
+async def download_file(file_id: str) -> tuple[bytes, str] | tuple[None, None]:
     try:
         logger.debug(f"📥 Скачивание файла {file_id}")
         file = await bot.get_file(file_id)
@@ -125,8 +121,6 @@ async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, No
 
                 # Определяем тип файла
                 file_extension = file.file_path.split('.')[-1].lower() if '.' in file.file_path else ''
-                file_name = os.path.basename(file.file_path) if file.file_path else f"file_{file_id}.{file_extension}"
-
                 if file_extension in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'tif']:
                     file_type = "image"
                 elif file_extension == 'pdf':
@@ -135,54 +129,11 @@ async def download_file(file_id: str) -> tuple[bytes, str, str] | tuple[None, No
                     file_type = "document"
 
                 logger.debug(f"📄 Тип файла определен как: {file_type}")
-                return file_data, file_type, file_name
+                return file_data, file_type
 
     except Exception as ex:
         logger.error(f"Error downloading file: {ex}\n{traceback.format_exc()}")
-        return None, None, None
-
-
-# Функция для подготовки данных к запросу модели
-def prepare_data_for_model(file_data: bytes, file_type: str, question: str) -> tuple[Image.Image, str]:
-    """
-    Подготавливает данные для запроса к модели.
-
-    Args:
-        file_data: Данные файла в байтах
-        file_type: Тип файла ('image' или 'pdf')
-        question: Текст вопроса пользователя
-
-    Returns:
-        tuple: (PIL.Image объект, текст запроса)
-    """
-    try:
-        logger.debug("🛠️ Подготовка данных для модели")
-        #todo: Переделать обработку pdf файла
-        if file_type == "pdf":
-            # # Конвертируем PDF в изображение
-            logger.debug("📄 Конвертируем PDF в изображение")
-            images = fitz.open(stream=file_data, filetype=file_type)
-
-            if images:
-                pix = images.load_page(0).get_pixmap(dpi=200)
-                mode = "RGBA" if pix.alpha else "RGB"
-                image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
-                logger.debug(f"✅ PDF сконвертирован в изображение, размер: {image.size}")
-            else:
-                raise ValueError("Не удалось конвертировать PDF в изображение")
-        else:
-            # Открываем изображение
-            image = Image.open(io.BytesIO(file_data))
-            logger.debug(f"✅ Изображение загружено, размер: {image.size}")
-
-        # Формируем полный запрос
-        full_query = f"Вопрос: {question}\n\nПроанализируй содержимое документа и дай развернутый ответ."
-
-        return image, full_query
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при подготовке данных: {e}\n{traceback.format_exc()}")
-        raise
+        return None, None
 
 
 # Обработчик только для файлов (без текста)
@@ -197,36 +148,35 @@ async def handle_files(message: Message):
     logger.debug(f"📎 Получен файл от {user_id}: тип={message.content_type}")
 
     try:
-        # Проверяем, есть ли уже файл у пользователя
-        if user_id in user_data and "file" in user_data[user_id]:
-            await message.answer("❌ У вас уже есть файл. Используйте /restart для очистки, чтобы отправить новый файл.")
-            return
-
-        file_data, file_type, file_name = None, None, None
+        file_data, file_type = None, None
 
         if message.photo:
             file_id = message.photo[-1].file_id
-            file_data, file_type, file_name = await download_file(file_id)
+            file_data, file_type = await download_file(file_id)
         elif message.document:
             file_id = message.document.file_id
-            file_data, file_type, file_name = await download_file(file_id)
+            file_data, file_type = await download_file(file_id)
 
         if file_data and file_type:
             # Проверяем поддерживаемые форматы файлов
             if file_type not in ["image", "pdf"]:
-                await message.answer(f"❌ Формат файла {file_name} не поддерживается. Отправьте изображение или PDF.")
+                await message.answer(f"❌ Формат файла не поддерживается. Отправьте изображение или PDF.")
                 logger.warning(f"⚠️ Неподдерживаемый формат файла от {user_id}: {file_type}")
                 return
-
-            # Сохраняем информацию о файле (только один файл)
-            user_data[user_id] = {
-                "file": {
-                    "name": file_name,
+            if user_id in user_data:
+                file = {
                     "type": file_type,
                     "data": base64.b64encode(file_data).decode('utf-8')
                 }
-            }
-            await message.answer(f"✅ Файл ({file_type}) сохранен. Теперь отправьте текст с вашим вопросом к документу.")
+                user_data[user_id].append(file)
+            else:
+                # Сохраняем информацию о файле (только один файл)
+                user_data[user_id] = [{
+                    "type": file_type,
+                    "data": base64.b64encode(file_data).decode('utf-8')
+                }]
+            await message.answer(
+                f"✅ Файл ({file_type}) сохранен. Теперь отправьте текст с вашим вопросом к документу или другие документы.")
             logger.debug(f"💾 Файл сохранен для {user_id}")
         else:
             await message.answer("❌ Не удалось обработать файл")
@@ -246,12 +196,11 @@ async def handle_text(message: Message):
     if message.text.startswith('/'):
         logger.debug(f"⚡ Команда {message.text} передана другому обработчику")
         return
-
     logger.debug(f"📝 Получен текст от {user_id}: {message.text[:50]}...")
 
     try:
         # Проверяем наличие файла
-        if user_id not in user_data or "file" not in user_data[user_id]:
+        if user_id not in user_data:
             logger.warning(f"⚠️ Пользователь {user_id} не имеет файла")
             await message.answer("❌ Нет файла для запроса. Сначала отправьте файл (изображение или PDF).")
             return
@@ -297,7 +246,6 @@ async def handle_unsupported_types(message: Message):
     content_name = content_type_names.get(content_type, "этот тип сообщений")
 
     unsupported_text = f"""❌ Извините, но {content_name} не поддерживаются.
-
 Отправьте изображение или PDF файл, затем отправьте текст с вашим вопросом."""
 
     await message.answer(unsupported_text)
@@ -309,26 +257,75 @@ async def process_query(message: Message, user_id: int, question: str):
     try:
         logger.debug(f"🔧 process_query начат для {user_id}")
         await message.answer("⏳ Обрабатываю запрос...")
-
-        # Получаем сохраненный файл
-        file_info = user_data[user_id]["file"]
-        file_data = base64.b64decode(file_info["data"])
-        file_type = file_info["type"]
+        # Получаем сохраненный файлы
+        prepare_data = []
+        for file in user_data[user_id]:
+            prepare_data.append((base64.b64decode(file['data']), file['type']))
 
         # Подготавливаем данные для модели
-        image, full_query = prepare_data_for_model(file_data, file_type, question)
+        images, prompt = prepare_data_for_model(prepare_data, question)
 
         # Получаем ответ от модели
-        #answer = generate_answer(image, full_query)
+        # answer = generate_answer(images, prompt)
 
         # Отправляем ответ пользователю
-        #await send_response(message, answer)
+        # await send_response(message, answer)
 
         logger.info(f"✅ Запрос успешно обработан для {user_id}")
+
+        # Очистка данных после обработки запроса
+        if user_id in user_data:
+            del user_data[user_id]
 
     except Exception as e:
         logger.error(f"❌ Ошибка в process_query: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Произошла ошибка при обработке запроса к модели")
+
+
+# Функция для подготовки данных к запросу модели
+def prepare_data_for_model(files: list[tuple[bytes, str]], question: str) -> tuple[list[Image.Image], str]:
+    """
+    Подготавливает данные для запроса к модели.
+
+    Args:
+        files: набор данных в виде изображений и pdf файлов
+        question: Текст вопроса пользователя
+    Returns:
+        tuple: (PIL.Image объект, текст запроса)
+    """
+    try:
+        logger.debug("🛠️ Подготовка данных для модели")
+        images = []
+        for file in files:
+            if file[1] == "pdf":
+                # # Конвертируем PDF в изображение
+                logger.debug("📄 Конвертируем PDF в изображение")
+                pages = fitz.open(stream=file[0], filetype=file[1])
+                if pages:
+                    for page in range(len(pages)):
+                        pix = pages.load_page(page).get_pixmap(dpi=200)
+                        mode = "RGBA" if pix.alpha else "RGB"
+                        image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+                        images.append(image)
+                    logger.debug(f"✅ PDF сконвертирован в изображение")
+                else:
+                    raise ValueError("Не удалось конвертировать PDF в изображение")
+            else:
+                # Открываем изображение
+                print(file[0])
+                print(file[1])
+                image = Image.open(io.BytesIO(bytes(file[0])))
+                images.append(image)
+                logger.debug(f"✅ Изображение загружено, размер: {image.size}")
+
+        # Формируем полный запрос
+        prompt = f"Вопрос: {question}\n\nПроанализируй содержимое документа и дай развернутый ответ."
+
+        return images, prompt
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при подготовке данных: {e}\n{traceback.format_exc()}")
+        raise
 
 
 # Отправка ответа пользователю
@@ -365,14 +362,11 @@ async def test_bot():
 # Главная функция запуска бота
 async def main():
     logger.info("🚀 Бот запускается...")
-
     # Проверяем работу бота
     if not await test_bot():
         logger.error("❌ Не удалось инициализировать бота")
         return
-
     logger.info("✅ Бот успешно инициализирован, начинаем пуллинг...")
-
     try:
         await dp.start_polling(bot)
     except Exception as e:
