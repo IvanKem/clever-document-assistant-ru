@@ -37,7 +37,7 @@ Clever Document Assistant — это набор инструментов для:
 
 Папка `notebooks/` содержит рабочие блокноты, разделённые по моделям и этапам:
 
-* `qwen2_5_vl_32B_Instruct/` — data_processing, training (QLoRA + SFT), inference/evaluation для VQA и LLM.
+* `qwen2_5_vl_32B_Instruct/` — data_processing, training (QLoRA, SFT/GRPO ), inference/evaluation для VQA и LLM.
 * `florence_2_large/` — data synthesis, fine-tuning и inference/evaluation ноутбуки.
 * `florence_vl/` — feature extraction и вспомогательные скрипты.
 ---
