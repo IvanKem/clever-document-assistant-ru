@@ -53,8 +53,8 @@ Clever Document Assistant — это набор инструментов для:
 ruCLEVR — русская версия набора для визуального рассуждения из MERA-evaluation 
 https://huggingface.co/datasets/MERA-evaluation/ruCLEVR
 
-ruVQA — русскоязычный датасет для задачи визуальных вопросов и ответов (Visual Question Answering) из MERA-evaluation
-https://huggingface.co/datasets/MERA-evaluation/ruVQA
+[https://huggingface.co/datasets/MERA-evaluation/ruVQA]
+(ruVQA) — русскоязычный датасет для задачи визуальных вопросов и ответов (Visual Question Answering) из MERA-evaluation
 
 MMBench-ru — русская версия мультимодального бенчмарка MMBench от deepvk
 https://huggingface.co/datasets/deepvk/MMBench-ru
