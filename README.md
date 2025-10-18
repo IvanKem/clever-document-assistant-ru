@@ -42,8 +42,7 @@ Clever Document Assistant — это набор инструментов для:
 * `florence_vl/` — feature extraction и вспомогательные скрипты.
 ---
 
-## Структура проекта (кратко)
-
+## Структура проекта 
 ```
 clever-document-assistant-ru/
 ├── LICENSE
