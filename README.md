@@ -4,9 +4,47 @@
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-Documents AI assistant for visual question answering 
+# Clever Document Assistant (RU)
 
-## Project Organization
+**Документы AI-ассистент для визуального вопросно-ответного интерфейса**
+
+Репозиторий содержит набор средств и экспериментов по построению ассистента для понимания документов с использованием современных визуально-лингвистических моделей (например, Florence 2, Qwen 2.5 VL и др.). Проект включает предобученные и дообученные модели, ноутбуки с пайплайнами обработки данных, тренировками и оценкой, а также телеграм-бот для демонстрации работы.
+
+---
+
+## Основная идея
+
+Clever Document Assistant — это набор инструментов для:
+
+* извлечения признаков и понимания структуры документов (layout),
+* ответов на вопросы по изображению/пдф документа (VQA — Visual Question Answering),
+* запуска инференса локально или через телеграм-бота для быстрой демонстрации.
+
+Проект ориентирован на исследовательскую работу и прототипирование (notebooks + reusable code).
+
+---
+
+## Модели
+
+В каталоге `models/` присутствуют две основные папки: `pre_trained/` и `fine_tuned/`.
+
+* `pre_trained/` — образы/артефакты предобученных моделей (например, `florence_2_large`, `qwen2_5_vl_32B_Instruct`).
+* `fine_tuned/` — адаптеры/веса и конфиги для дообученных версий тех же архитектур (training_args, adapter_config и др.).
+
+> Если вы планируете воспроизводить эксперимент с дообучением: убедитесь, что у вас есть подходящая версия `transformers` и `accelerate`, а также достаточный VRAM для выбранной модели.
+
+---
+
+## Ноутбуки
+
+Папка `notebooks/` содержит рабочие блокноты, разделённые по моделям и этапам:
+
+* `qwen2_5_vl_32B_Instruct/` — data_processing, training (QLoRA + SFT), inference/evaluation для VQA и LLM.
+* `florence_2_large/` — data synthesis, fine-tuning и inference/evaluation ноутбуки.
+* `florence_vl/` — feature extraction и вспомогательные скрипты.
+---
+
+## Структура проекта (кратко)
 
 ```
 clever-document-assistant-ru/
