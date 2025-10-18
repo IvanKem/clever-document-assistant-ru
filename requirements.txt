@@ -1,3 +1,7 @@
+PyMuPDF
+python-decouple
+aiohttp
+aiogram
 black
 flake8
 isort
